@@ -100,7 +100,7 @@ public class LoginPage extends Application {
         Task<Boolean> task = new Task<Boolean>() {
             @Override
             protected Boolean call() throws Exception {
-                String url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyBQVX6KR_jjMLtJtm25fFQw297IlX2uymA";
+                String url = "";//Url
                 String jsonInput = "{"
                         + "\"email\":\"" + email + "\","
                         + "\"password\":\"" + password + "\","
