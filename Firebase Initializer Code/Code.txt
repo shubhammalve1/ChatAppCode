@@ -1,0 +1,45 @@
+package com.chatapp;
+
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.UserRecord;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.FirebaseOptions;
+import java.io.FileInputStream;
+import java.io.IOException;
+
+public class FirebaseInitializer {
+
+    public static void initialize() {
+        try (FileInputStream serviceAccount = new FileInputStream("chatapp/src/main/java/com/chatapp/JSON.json")) {
+            FirebaseOptions options = FirebaseOptions.builder()
+                    .setCredentials(GoogleCredentials.fromStream(serviceAccount))
+                    .setDatabaseUrl("https://chatappp-1098b-default-rtdb.asia-southeast1.firebasedatabase.app")
+                    .build();
+            FirebaseApp.initializeApp(options);
+            System.out.println("Firebase initialized successfully.");
+        } catch (IOException e) {
+            System.err.println("Failed to initialize Firebase: " + e.getMessage());
+        }
+    }
+
+    public static UserRecord createUser(String email, String password) throws FirebaseAuthException {
+        // Create a new Firebase user with email and password
+        UserRecord.CreateRequest request = new UserRecord.CreateRequest()
+                .setEmail(email)
+                .setPassword(password);
+        return FirebaseAuth.getInstance().createUser(request);
+    }
+
+    public static boolean signInUser(String email, String password) {
+        // Firebase Admin SDK cannot authenticate users directly
+        // Use Firebase Client SDK (in an Android or Java client application) for authentication.
+        // Admin SDK does not have direct login methods.
+        System.out.println("Firebase Admin SDK cannot sign in users directly.");
+        return false;
+    }
+}
+
+
+

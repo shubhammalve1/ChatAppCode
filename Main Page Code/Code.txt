@@ -1,0 +1,838 @@
+package com.chatapp;
+
+import javafx.animation.FadeTransition;
+import javafx.animation.ScaleTransition;
+import javafx.animation.TranslateTransition;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
+import javafx.event.ActionEvent;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.geometry.Side;
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.stage.FileChooser;
+import javafx.stage.Stage;
+import javafx.util.Duration;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.awt.Desktop;
+import java.io.*;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+public class App extends Application {
+
+    private VBox messageArea;
+    private TextField inputField;
+    private Button sendButton, sendFileButton, saveChatButton, connectButton, listenButton, emojiButton, recordButton, themeToggleButton;
+    private TextField portField, hostField;
+    private Label fileTransferLabel, typingLabel, statusLabel;
+    private ServerSocket serverSocket;
+    private Socket socket;
+    private ObjectOutputStream objectOutputStream;
+    private ObjectInputStream objectInputStream;
+    private StringBuilder chatHistory = new StringBuilder();
+    private SecretKey secretKey;
+
+    // User settings using properties
+    private final StringProperty username = new SimpleStringProperty("User");
+    private BooleanProperty isDarkMode = new SimpleBooleanProperty(false);
+    private boolean enableReadReceipts = true;
+    private boolean blockUsers = false;
+    private boolean enableNotifications = false;
+    private boolean soundAlerts = false;
+    
+    // UI properties for profile
+    private ImageView profilePic;
+    private final ObjectProperty<Image> profileImage = new SimpleObjectProperty<>();
+    private Label appTitle;
+    private Label fileTransferTimeLabel; // For file transfer time
+
+    public static void main(String[] args) {
+        launch(args);
+    }
+
+    @Override
+    public void start(Stage primaryStage) {
+        primaryStage.setTitle("ChatApp");
+        generateEncryptionKey();
+
+        // Initialize profile image property
+        Image defaultImage = new Image(getClass().getResource("/chat_icon.png").toExternalForm());
+        profileImage.set(defaultImage);
+        profilePic = new ImageView();
+        profilePic.setFitWidth(40);
+        profilePic.setFitHeight(40);
+
+        // Bind the image property so changes are reflected
+        profilePic.imageProperty().bind(profileImage);
+        addHoverAnimation(profilePic);
+
+        // Create header with profile picture and title; bind title text to username property
+        appTitle = new Label();
+        appTitle.setFont(new Font("Arial", 24));
+        appTitle.setTextFill(Color.WHITE);
+        // Bind the text so it always reflects the current username
+        appTitle.textProperty().bind(Bindings.concat(username, "'s ChatApp"));
+
+        HBox header = new HBox(10, profilePic, appTitle);
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.setPadding(new Insets(10));
+        /*header.setStyle("-fx-background-color: linear-gradient(to right, #ff6a00, #ee0979);" +
+                        "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 5,0,0,2);");*/
+        
+        header.setStyle("-fx-background-color: linear-gradient(to right, #3b5998, #3b5998);" +
+                        "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 5,0,0,2);");
+        applyFadeTransition(header);
+
+        // Sidebar (for contacts)
+        // VBox sidebar = new VBox(10);
+        // sidebar.setPadding(new Insets(10));
+        // sidebar.setStyle("-fx-background-color: #f8f9fa; -fx-border-color: #ddd; -fx-border-width: 1px;" +
+        //                  "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 5,0,0,1);");
+        // Label contactListTitle = new Label("Contacts");
+        // contactListTitle.setFont(new Font("Arial", 18));
+        // sidebar.getChildren().add(contactListTitle);
+
+        // Connection area
+        Label portLabel = new Label("Port:");
+        portField = new TextField("1500");
+        Label hostLabel = new Label("Host:");
+        hostField = new TextField("localhost");
+        connectButton = new Button("Connect");
+        connectButton.setStyle("-fx-background-color:rgb(240, 240, 236); -fx-text-fill: black;");
+
+        connectButton.setOnAction(e -> connectToServer());
+        listenButton = new Button("Listen");
+        listenButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+        
+        listenButton.setOnAction(e -> startServer());
+        HBox connectionArea = new HBox(10, portLabel, portField, hostLabel, hostField, listenButton, connectButton);
+        connectionArea.setPadding(new Insets(10));
+        connectionArea.setAlignment(Pos.CENTER);
+        //connectionArea.setStyle("-fx-background-color:rgb(14, 78, 134);");
+        connectionArea.setStyle("-fx-background-color: linear-gradient(to right,rgb(250, 179, 87), rgb(250, 179, 87);");
+        //Border : -fx-border-color: #ddd
+
+        // Add background image setup
+        Image backgroundImage = new Image("file: src\\main\\java\\com\\chatapp\\pexels-njeromin-12734294.jpg");
+        BackgroundImage background = new BackgroundImage(
+            backgroundImage, 
+            BackgroundRepeat.NO_REPEAT, 
+            BackgroundRepeat.NO_REPEAT, 
+            BackgroundPosition.CENTER, 
+            new BackgroundSize(100, 100, true, true, false, true));
+        
+
+        // Message area with gradient background
+        messageArea = new VBox(10);
+        messageArea.setPadding(new Insets(10));
+        messageArea.setStyle("-fx-background-color: linear-gradient(to bottom,rgb(237, 240, 241),  #f0f8ff);" +
+                             "-fx-border-color: #ddd; ");
+        ScrollPane scrollPane = new ScrollPane(messageArea);
+        scrollPane.setFitToWidth(true);
+        applyTranslateTransition(scrollPane);
+
+        // Input area and controls with gradient background
+        inputField = new TextField();
+        inputField.setPromptText("Type your message...");
+        inputField.setOnKeyTyped(event -> sendTypingIndicator());
+
+        sendButton = new Button("Send");
+        sendButton.setOnAction(e -> sendMessage());
+        sendButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        sendFileButton = new Button("📎");
+        sendFileButton.setOnAction(e -> sendFile());
+        sendFileButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        emojiButton = new Button("😀");
+        emojiButton.setOnAction(e -> openEmojiPicker());
+        emojiButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        recordButton = new Button("🎤");
+        recordButton.setOnAction(e -> recordVoiceMessage());
+        recordButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        saveChatButton = new Button("Save Chat");
+        saveChatButton.setOnAction(e -> saveChatHistory());
+        saveChatButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        themeToggleButton = new Button("🌙");
+        themeToggleButton.setOnAction(e -> toggleTheme());
+        themeToggleButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        // Add hover animations to key buttons
+        addHoverAnimation(connectButton);
+        addHoverAnimation(listenButton);
+        addHoverAnimation(sendButton);
+        addHoverAnimation(sendFileButton);
+        addHoverAnimation(emojiButton);
+        addHoverAnimation(recordButton);
+        addHoverAnimation(saveChatButton);
+        addHoverAnimation(themeToggleButton);
+
+        HBox inputArea = new HBox(10, inputField, emojiButton, sendFileButton, recordButton, sendButton, saveChatButton, themeToggleButton);
+        inputArea.setPadding(new Insets(10));
+        inputArea.setAlignment(Pos.CENTER);
+        inputArea.setStyle("-fx-background-color: linear-gradient(to right, rgb(250, 179, 87), rgb(250, 179, 87)); -fx-border-color: #ddd, -fx-border-width: 1px;");
+
+        fileTransferLabel = new Label();
+        typingLabel = new Label();
+        statusLabel = new Label("Offline");
+        HBox statusArea = new HBox(10, statusLabel, typingLabel);
+        statusArea.setAlignment(Pos.BOTTOM_RIGHT);
+        statusArea.setPadding(new Insets(5));
+        statusArea.setStyle("-fx-background-color: #3b5998;");
+
+        fileTransferTimeLabel = new Label("File transfer time: -");
+        HBox fileTransferStatus = new HBox(10, fileTransferTimeLabel);
+        fileTransferStatus.setAlignment(Pos.BOTTOM_LEFT);
+
+        VBox bottomSection = new VBox(inputArea, statusArea, fileTransferStatus);
+        
+        Button settingsButton = new Button("⚙");
+        settingsButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+        settingsButton.setOnAction(e -> openSettingsWindow());
+
+        addHoverAnimation(settingsButton);
+
+        VBox leftLayout = new VBox(10, settingsButton);
+        leftLayout.setPadding(new Insets(20));
+
+        BorderPane mainLayout = new BorderPane();
+        mainLayout.setTop(connectionArea);
+        mainLayout.setLeft(leftLayout);
+        mainLayout.setCenter(scrollPane);
+        mainLayout.setBottom(bottomSection);
+        mainLayout.setStyle("-fx-background-color: rgb(250, 179, 87);");
+        
+        // Add header at the top of the main layout if desired (optional)
+        BorderPane rootLayout = new BorderPane();
+        rootLayout.setTop(header);
+        rootLayout.setCenter(mainLayout);
+
+        Scene scene = new Scene(rootLayout, 850, 650);
+        primaryStage.setScene(scene);
+        primaryStage.show();
+    }
+
+    // Settings window allowing changes to username and profile pic
+    private void openSettingsWindow() {
+        Stage settingsStage = new Stage();
+        settingsStage.setTitle("Settings");
+        
+        TabPane tabPane = new TabPane();
+
+        // ----- Profile Tab -----
+        Tab profileTab = new Tab("Profile");
+        profileTab.setStyle("-fx-background-color: rgb(157, 178, 241); -fx-font-weight: bold;");
+        
+
+
+        VBox profileContent = new VBox(10);
+        profileContent.setStyle("-fx-background-color: rgb(157, 178, 241);");
+
+        profileContent.setPadding(new Insets(10));
+
+        Label usernameLabel = new Label("Change Username:");
+        usernameLabel.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+        TextField usernameField = new TextField(username.get());
+
+        Button updateUsernameButton = new Button("Update Username");
+        updateUsernameButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black; ");
+
+        updateUsernameButton.setOnAction(e -> {
+            String newName = usernameField.getText().trim();
+            if (!newName.isEmpty()) {
+                username.set(newName);
+                appendMessage("Username updated to: " + newName);
+            }
+        });
+
+        Label profilePicLabel = new Label("Change Profile Picture:");
+        profilePicLabel.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+
+        Button uploadProfilePicButton = new Button("Upload");
+        uploadProfilePicButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        uploadProfilePicButton.setOnAction(e -> {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg", "*.gif")
+            );
+            File file = fileChooser.showOpenDialog(settingsStage);
+            if (file != null) {
+                Image newImage = new Image(file.toURI().toString());
+                profileImage.set(newImage);
+                appendMessage("Profile picture updated.");
+            }
+        });
+
+        profileContent.getChildren().addAll(usernameLabel, usernameField, updateUsernameButton, profilePicLabel, uploadProfilePicButton);
+        profileTab.setContent(profileContent);
+
+        // ----- Privacy Tab -----
+        Tab privacyTab = new Tab("Privacy");
+        privacyTab.setStyle("-fx-background-color: rgb(144, 238, 144); -fx-text-fill: black; -fx-font-weight: bold;");
+
+        VBox privacyContent = new VBox(10);
+        privacyContent.setStyle("-fx-background-color: rgb(144, 238, 144);");
+
+        privacyContent.setPadding(new Insets(10));
+        CheckBox readReceiptsCheckBox = new CheckBox("Enable Read Receipts");
+        readReceiptsCheckBox.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+
+        readReceiptsCheckBox.setSelected(enableReadReceipts);
+        readReceiptsCheckBox.setOnAction(e -> {
+            enableReadReceipts = readReceiptsCheckBox.isSelected();
+            appendMessage("Read Receipts " + (enableReadReceipts ? "enabled" : "disabled"));
+        });
+
+        CheckBox blockUsersCheckBox = new CheckBox("Block Users");
+        blockUsersCheckBox.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+
+        blockUsersCheckBox.setSelected(blockUsers);
+        blockUsersCheckBox.setOnAction(e -> {
+            blockUsers = blockUsersCheckBox.isSelected();
+            appendMessage("Peer " + (blockUsers ? "blocked" : "unblocked"));
+        });
+
+        privacyContent.getChildren().addAll(readReceiptsCheckBox, blockUsersCheckBox);
+        privacyTab.setContent(privacyContent);
+
+        // ----- Notifications Tab -----
+        Tab notificationTab = new Tab("Notifications");
+        notificationTab.setStyle("-fx-background-color: rgb(255, 223, 186); -fx-text-fill: black; -fx-font-weight: bold;");
+
+        VBox notificationContent = new VBox(10);
+        notificationContent.setStyle("-fx-background-color: rgb(255, 223, 186); -fx-text-fill: black;");
+
+        notificationContent.setPadding(new Insets(10));
+
+        CheckBox enableNotificationsCheckBox = new CheckBox("Enable Notifications");
+        enableNotificationsCheckBox.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+
+        enableNotificationsCheckBox.setSelected(enableNotifications);
+        enableNotificationsCheckBox.setOnAction(e -> {
+            enableNotifications = enableNotificationsCheckBox.isSelected();
+            appendMessage("Notifications " + (enableNotifications ? "enabled" : "disabled"));
+        });
+
+        CheckBox soundAlertsCheckBox = new CheckBox("Sound Alerts");
+        soundAlertsCheckBox.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+        
+        soundAlertsCheckBox.setSelected(soundAlerts);
+        soundAlertsCheckBox.setOnAction(e -> {
+            soundAlerts = soundAlertsCheckBox.isSelected();
+            appendMessage("Sound Alerts " + (soundAlerts ? "enabled" : "disabled"));
+        });
+
+        notificationContent.getChildren().addAll(enableNotificationsCheckBox, soundAlertsCheckBox);
+        notificationTab.setContent(notificationContent);
+
+        // ----- Appearance (Theme) Tab -----
+        Tab themeTab = new Tab("Appearance");
+        themeTab.setStyle("-fx-background-color: rgb(245, 140, 219); -fx-text-fill: black; -fx-font-weight: bold;");
+
+        VBox themeContent = new VBox(10);
+        themeContent.setStyle("-fx-background-color: rgb(245, 140, 219); -fx-text-fill: black;");
+        themeContent.setPadding(new Insets(10));
+        ToggleGroup themeGroup = new ToggleGroup();
+
+        RadioButton lightModeRadio = new RadioButton("Light Mode");
+        lightModeRadio.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+
+        RadioButton darkModeRadio = new RadioButton("Dark Mode");
+        darkModeRadio.setStyle("-fx-background-color: -fx-text-fill: black; -fx-font-weight: bold;");
+
+        lightModeRadio.setToggleGroup(themeGroup);
+        darkModeRadio.setToggleGroup(themeGroup);
+        lightModeRadio.setSelected(!themeToggleButton.getText().equals("Light Mode")); // Based on current theme
+        darkModeRadio.setSelected(themeToggleButton.getText().equals("Light Mode"));
+        lightModeRadio.setOnAction(e -> applyTheme(false));
+        darkModeRadio.setOnAction(e -> applyTheme(true));
+        themeContent.getChildren().addAll(lightModeRadio, darkModeRadio);
+        themeTab.setContent(themeContent);
+
+        // ----- Account Tab -----
+        Tab accountTab = new Tab("Account");
+        accountTab.setStyle("-fx-background-color: rgb(148, 248, 139); -fx-text-fill: black; -fx-font-weight: bold;");
+
+        VBox accountContent = new VBox(10);
+        accountContent.setStyle("-fx-background-color: rgb(148, 248, 139); -fx-text-fill: black;");
+        accountContent.setPadding(new Insets(10));
+        
+        Button logoutButton = new Button("Logout");
+        logoutButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+
+        logoutButton.setOnAction(e -> {
+            disconnect();
+            appendMessage("Logged out.");
+        });
+
+        Button deleteAccountButton = new Button("Delete Account");
+        //deleteAccountButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black;");
+        deleteAccountButton.setStyle("-fx-background-color: rgb(240, 240, 236); -fx-text-fill: black; ");
+
+        deleteAccountButton.setOnAction(e -> {
+            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+            confirmAlert.setTitle("Delete Account");
+            confirmAlert.setHeaderText(null);
+            confirmAlert.setContentText("Are you sure you want to delete your account?");
+            Optional<ButtonType> result = confirmAlert.showAndWait();
+            if (result.isPresent() && result.get() == ButtonType.OK) {
+                File keyFile = new File("secretKey.dat");
+                if (keyFile.exists()) {
+                    keyFile.delete();
+                }
+                appendMessage("Account deleted.");
+                Platform.exit();
+            }
+        });
+
+        accountContent.getChildren().addAll(logoutButton, deleteAccountButton);
+        accountTab.setContent(accountContent);
+
+        tabPane.getTabs().addAll(profileTab, privacyTab, notificationTab, themeTab, accountTab);
+        tabPane.setStyle("-fx-background-color: rgb(28, 79, 231); -fx-text-fill: black;");
+
+        Scene settingsScene = new Scene(tabPane, 400, 300);
+         
+        settingsStage.setScene(settingsScene);
+        applyFadeTransition(tabPane);
+        settingsStage.show();
+    }
+
+    private void applyFadeTransition(Node node) {
+        FadeTransition fadeTransition = new FadeTransition(Duration.seconds(1), node);
+        fadeTransition.setFromValue(0);
+        fadeTransition.setToValue(1);
+        fadeTransition.play();
+    }
+
+    private void applyTranslateTransition(Node node) {
+        TranslateTransition translateTransition = new TranslateTransition(Duration.seconds(1), node);
+        translateTransition.setFromY(-20);
+        translateTransition.setToY(0);
+        translateTransition.play();
+    }
+    
+    // Applies the selected theme to key UI elements
+     private void applyTheme(boolean dark) {
+        isDarkMode.set(dark);
+        String darkModeStyle = "-fx-background-color: #333; -fx-text-fill: white;";
+        String lightModeStyle = "-fx-background-color: white; -fx-text-fill: black;";
+        messageArea.setStyle(isDarkMode.get() ? darkModeStyle : lightModeStyle);
+        inputField.setStyle(isDarkMode.get() ? darkModeStyle : lightModeStyle);
+        statusLabel.setStyle(isDarkMode.get() ? darkModeStyle : lightModeStyle);
+        themeToggleButton.setText(isDarkMode.get() ? "Light Mode" : "Dark Mode");
+    }
+    
+    private void toggleTheme() {
+    // Toggle dark/light mode using the applyTheme method
+    applyTheme(isDarkMode.get() ? false : true); // Using ternary operator for toggling
+}
+
+
+    private void generateEncryptionKey() {
+        try {
+            File keyFile = new File("secretKey.dat");
+            if (keyFile.exists()) {
+                byte[] keyBytes = Files.readAllBytes(keyFile.toPath());
+                secretKey = new SecretKeySpec(keyBytes, "AES");
+            } else {
+                KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+                keyGen.init(128);
+                secretKey = keyGen.generateKey();
+                Files.write(keyFile.toPath(), secretKey.getEncoded());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Modified AES encryption using UTF-8 encoding
+    private String encryptMessage(String message) {
+        try {
+            Cipher cipher = Cipher.getInstance("AES");
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+            byte[] encryptedBytes = cipher.doFinal(message.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(encryptedBytes);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return message;
+        }
+    }
+
+    // Modified AES decryption using UTF-8 encoding
+    private String decryptMessage(String encryptedMessage) {
+        try {
+            Cipher cipher = Cipher.getInstance("AES");
+            cipher.init(Cipher.DECRYPT_MODE, secretKey);
+            byte[] decodedBytes = Base64.getDecoder().decode(encryptedMessage);
+            byte[] decryptedBytes = cipher.doFinal(decodedBytes);
+            return new String(decryptedBytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return encryptedMessage;
+        }
+    }
+
+    private void startServer() {
+        new Thread(() -> {
+            try {
+                serverSocket = new ServerSocket(Integer.parseInt(portField.getText()));
+                Platform.runLater(() -> statusLabel.setText("Waiting for Connection..."));
+                socket = serverSocket.accept();
+                appendMessage("Connection established.");
+                objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+                objectInputStream = new ObjectInputStream(socket.getInputStream());
+                Platform.runLater(() -> statusLabel.setText("Client Connected"));
+                listenForMessages();
+            } catch (IOException ex) {
+                Platform.runLater(() -> statusLabel.setText("Server Failed."));
+            }
+        }).start();
+    }
+
+    private void sendTypingIndicator() {
+        try {
+            if (objectOutputStream != null) {
+                objectOutputStream.writeObject("TYPING...");
+                objectOutputStream.flush();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void recordVoiceMessage() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Select an Audio File to Send");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Audio Files", "*.wav", "*.mp3"));
+        File file = fileChooser.showOpenDialog(null);
+        if (file != null) {
+            try {
+                byte[] audioBytes = Files.readAllBytes(file.toPath());
+                objectOutputStream.writeObject("AUDIO:" + file.getName());
+                objectOutputStream.writeObject(audioBytes);
+                objectOutputStream.flush();
+                appendMessage("You sent a voice message: " + file.getName());
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                Platform.runLater(() -> statusLabel.setText("Error sending audio."));
+            }
+        }
+    }
+
+    private void sendReadReceipt() {
+        if (enableReadReceipts && objectOutputStream != null) {
+            try {
+                objectOutputStream.writeObject("READ");
+                objectOutputStream.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void updateLastMessageAsRead() {
+        if (!messageArea.getChildren().isEmpty()) {
+            Label lastMessage = (Label) messageArea.getChildren().get(messageArea.getChildren().size() - 1);
+            if (lastMessage.getText().endsWith("📩 Delivered")) {
+                lastMessage.setText(lastMessage.getText().replace("📩 Delivered", "✅ Read"));
+            }
+        }
+    }
+
+    private void connectToServer() {
+        try {
+            socket = new Socket(hostField.getText(), Integer.parseInt(portField.getText()));
+            objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+            objectInputStream = new ObjectInputStream(socket.getInputStream());
+            Platform.runLater(() -> statusLabel.setText("Connected to Server"));
+            listenForMessages();
+        } catch (IOException ex) {
+            Platform.runLater(() -> statusLabel.setText("Connection Failed."));
+        }
+    }
+
+    private void listenForMessages() {
+        new Thread(() -> {
+            try {
+                objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+                objectInputStream = new ObjectInputStream(socket.getInputStream());
+                Platform.runLater(() -> {
+                    sendButton.setDisable(false);
+                    sendFileButton.setDisable(false);
+                });
+                while (true) {
+                    Object object = objectInputStream.readObject();
+                    if (blockUsers && object instanceof String) {
+                        String temp = (String) object;
+                        if (!temp.equals("TYPING...") && !temp.equals("READ")) {
+                            continue;
+                        }
+                    }
+                    if (object instanceof String) {
+                        String message = (String) object;
+                        if (message.equals("TYPING...")) {
+                            Platform.runLater(() -> typingLabel.setText("Peer is typing..."));
+                            Thread.sleep(1900);
+                            Platform.runLater(() -> typingLabel.setText(""));
+                        } else if (message.equals("READ")) {
+                            Platform.runLater(this::updateLastMessageAsRead);
+                        } else {
+                            String decryptedMessage = decryptMessage(message);
+                            Platform.runLater(() -> {
+                                appendMessage("Peer: " + decryptedMessage + " 📩 Delivered");
+                                if (enableNotifications) {
+                                    showNotification("New message from " + username.get());
+                                }
+                                if (soundAlerts) {
+                                    java.awt.Toolkit.getDefaultToolkit().beep();
+                                }
+                            });
+                            sendReadReceipt();
+                        }
+                    } else if (object instanceof FileMessage) {
+                        FileMessage fileMessage = (FileMessage) object;
+                        handleReceivedFile(fileMessage);
+                    }
+                }
+            } catch (IOException | ClassNotFoundException | InterruptedException e) {
+                appendMessage("Connection closed.");
+            }
+        }).start();
+    }
+
+    private void sendMessage() {
+        String message = inputField.getText().trim();
+        if (!message.isEmpty() && objectOutputStream != null) {
+            try {
+                String encryptedMessage = encryptMessage(message);
+                objectOutputStream.writeObject(encryptedMessage);
+                objectOutputStream.flush();
+                appendMessage("You: " + message + " ✅ Sent");
+                inputField.clear();
+                ScaleTransition st = new ScaleTransition(Duration.millis(200), sendButton);
+                st.setFromX(1.0);
+                st.setFromY(1.0);
+                st.setToX(1.2);
+                st.setToY(1.2);
+                st.setAutoReverse(true);
+                st.setCycleCount(2);
+                st.play();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void sendFile() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("All Files", "*.*"));
+        File file = fileChooser.showOpenDialog(null);
+        if (file != null) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                byte[] fileBytes = readAllBytesCompat(fis);
+                long startTime = System.currentTimeMillis();
+                objectOutputStream.writeObject(new FileMessage(file.getName(), fileBytes));
+                long endTime = System.currentTimeMillis();
+                long timeTaken = endTime - startTime;
+                appendMessage("You sent a file: " + file.getName());
+                Platform.runLater(() -> fileTransferLabel.setText("File sent in: " + timeTaken + " ms"));
+            } catch (IOException e) {
+                showError("Error sending file: " + e.getMessage());
+            }
+        }
+    }
+
+    private void handleReceivedFile(FileMessage fileMessage) {
+        Platform.runLater(() -> {
+            long startTime = System.currentTimeMillis();
+            Label fileLabel = new Label("File Received: " + fileMessage.fileName);
+            fileLabel.setWrapText(true);
+            fileLabel.setStyle("-fx-text-fill: blue; -fx-underline: true;");
+            fileLabel.setOnMouseClicked(event -> {
+                try {
+                    File tempFile = File.createTempFile("chat_file_", fileMessage.fileName);
+                    tempFile.deleteOnExit();
+                    try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                        fos.write(fileMessage.fileData);
+                    }
+                    long timeTaken = System.currentTimeMillis() - startTime;
+                    Platform.runLater(() -> fileTransferTimeLabel.setText("File received in: " + timeTaken + " ms"));
+                    Desktop.getDesktop().open(tempFile);
+                } catch (IOException e) {
+                    showError("Error opening file: " + e.getMessage());
+                }
+            });
+            messageArea.getChildren().add(fileLabel);
+        });
+    }
+
+    private void openEmojiPicker() {
+        List<String> emojis = Arrays.asList("😀", "😂", "😍", "👍", "🔥", "🎉", "❤️", "😎", "🙌");
+        ContextMenu emojiMenu = new ContextMenu();
+        for (String emoji : emojis) {
+            MenuItem item = new MenuItem(emoji);
+            item.setOnAction(e -> inputField.appendText(emoji));
+            emojiMenu.getItems().add(item);
+        }
+        emojiMenu.show(emojiButton, Side.BOTTOM, 0, 0);
+    }
+
+    private void saveChatHistory() {
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text Files", "*.txt"));
+        fileChooser.setInitialFileName("chat_history.txt");
+        File saveFile = fileChooser.showSaveDialog(null);
+        if (saveFile != null) {
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(saveFile))) {
+                writer.write(chatHistory.toString());
+                appendMessage("Chat history saved to: " + saveFile.getAbsolutePath());
+            } catch (IOException e) {
+                showError("Error saving chat history: " + e.getMessage());
+            }
+        }
+    }
+
+    private byte[] readAllBytesCompat(InputStream inputStream) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] data = new byte[1024];
+        int bytesRead;
+        while ((bytesRead = inputStream.read(data, 0, data.length)) != -1) {
+            buffer.write(data, 0, bytesRead);
+        }
+        return buffer.toByteArray();
+    }
+
+    private void appendMessage(final String message) {
+        chatHistory.append(new SimpleDateFormat("HH:mm:ss").format(new Date()))
+                   .append(" - ")
+                   .append(message)
+                   .append("\n");
+        Platform.runLater(() -> {
+            Label messageLabel = new Label(message);
+            messageLabel.setWrapText(true);
+            if (message.startsWith("You:")) {
+                messageLabel.setStyle("-fx-background-color: #d1ffd6; -fx-padding: 8px; -fx-border-radius: 10px; -fx-background-radius: 10px;" +
+                        " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 3,0,0,1);");
+            } else {
+                messageLabel.setStyle("-fx-background-color: #e1f5fe; -fx-padding: 8px; -fx-border-radius: 10px; -fx-background-radius: 10px;" +
+                        " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 3,0,0,1);");
+            }
+            messageArea.getChildren().add(messageLabel);
+            FadeTransition ft = new FadeTransition(Duration.millis(500), messageLabel);
+            ft.setFromValue(0);
+            ft.setToValue(1);
+            ft.play();
+        });
+    }
+
+    private void showError(String errorMessage) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Error");
+            alert.setHeaderText(null);
+            alert.setContentText(errorMessage);
+            alert.showAndWait();
+        });
+    }
+    
+    // Displays a temporary notification (toast) with fade in/out animations
+    private void showNotification(String text) {
+        Stage toastStage = new Stage();
+        toastStage.setAlwaysOnTop(true);
+        toastStage.setResizable(false);
+        Label label = new Label(text);
+        label.setStyle("-fx-background-color: #333; -fx-text-fill: white; -fx-padding: 10px; -fx-background-radius: 5px;");
+        StackPane root = new StackPane(label);
+        root.setStyle("-fx-background-color: transparent;");
+        Scene scene = new Scene(root);
+        scene.setFill(null);
+        toastStage.setScene(scene);
+        toastStage.show();
+
+        FadeTransition fadeIn = new FadeTransition(Duration.millis(500), root);
+        fadeIn.setFromValue(0);
+        fadeIn.setToValue(1);
+        fadeIn.play();
+
+        new Thread(() -> {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ex) {
+                ex.printStackTrace();
+            }
+            Platform.runLater(() -> {
+                FadeTransition fadeOut = new FadeTransition(Duration.millis(500), root);
+                fadeOut.setFromValue(1);
+                fadeOut.setToValue(0);
+                fadeOut.setOnFinished(e -> toastStage.close());
+                fadeOut.play();
+            });
+        }).start();
+    }
+    
+    private void disconnect() {
+        try {
+            if (objectInputStream != null) objectInputStream.close();
+            if (objectOutputStream != null) objectOutputStream.close();
+            if (socket != null) socket.close();
+            if (serverSocket != null) serverSocket.close();
+            Platform.runLater(() -> statusLabel.setText("Disconnected"));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Adds a hover (scale) animation to a Node
+    private void addHoverAnimation(Node node) {
+        node.setOnMouseEntered(e -> {
+            ScaleTransition st = new ScaleTransition(Duration.millis(200), node);
+            st.setToX(1.1);
+            st.setToY(1.1);
+            st.play();
+        });
+        node.setOnMouseExited(e -> {
+            ScaleTransition st = new ScaleTransition(Duration.millis(200), node);
+            st.setToX(1.0);
+            st.setToY(1.0);
+            st.play();
+        });
+    }
+
+    private static class FileMessage implements Serializable {
+        private final String fileName;
+        private final byte[] fileData;
+
+        public FileMessage(String fileName, byte[] fileData) {
+            this.fileName = fileName;
+            this.fileData = fileData;
+        }
+    }
+}

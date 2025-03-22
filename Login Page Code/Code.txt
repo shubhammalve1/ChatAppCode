@@ -1,0 +1,231 @@
+import javafx.animation.ScaleTransition;
+import javafx.application.Application;
+import javafx.concurrent.Task;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.layout.GridPane;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.stage.Stage;
+import javafx.util.Duration;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
+public class LoginPage extends Application {
+
+    @Override
+    public void start(Stage primaryStage) {
+        primaryStage.setTitle("ChatApp Login");
+
+        // UI Components for Login
+        Label title = new Label("ChatApp Pro");
+        title.setFont(new Font("Arial", 24));
+        title.setTextFill(Color.web("#3b5998"));
+
+        Label emailLabel = new Label("Email:");
+        TextField emailField = new TextField();
+        emailField.setPromptText("Enter your email");
+
+        Label passwordLabel = new Label("Password:");
+        PasswordField passwordField = new PasswordField();
+        passwordField.setPromptText("Enter your password");
+
+        Button loginButton = new Button("Login");
+        loginButton.setStyle("-fx-background-color: #3b5998; -fx-text-fill: white;");
+
+        Button createAccountButton = new Button("Create Account");
+        createAccountButton.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white;");
+
+        // Adding Hover Effect
+        addHoverAnimation(loginButton);
+        addHoverAnimation(createAccountButton);
+
+        loginButton.setOnAction(e -> {
+            String email = emailField.getText().trim();
+            String password = passwordField.getText().trim();
+            validateCredentials(email, password, primaryStage);
+        });
+
+        createAccountButton.setOnAction(e -> showCreateAccountPage(primaryStage));
+
+        // Layout for Login
+        GridPane loginGrid = new GridPane();
+        loginGrid.setAlignment(Pos.CENTER);
+        loginGrid.setPadding(new Insets(20));
+        loginGrid.setVgap(10);
+        loginGrid.setHgap(10);
+
+        loginGrid.add(title, 0, 0, 2, 1);
+        loginGrid.add(emailLabel, 0, 1);
+        loginGrid.add(emailField, 1, 1);
+        loginGrid.add(passwordLabel, 0, 2);
+        loginGrid.add(passwordField, 1, 2);
+        loginGrid.add(loginButton, 0, 3);
+        loginGrid.add(createAccountButton, 1, 3);
+
+        Scene loginScene = new Scene(loginGrid, 400, 300);
+        primaryStage.setScene(loginScene);
+        primaryStage.show();
+    }
+
+    // Method for Hover Effect
+    private static void addHoverAnimation(Button button) {
+        button.setOnMouseEntered(e -> {
+            ScaleTransition scaleUp = new ScaleTransition(Duration.millis(200), button);
+            scaleUp.setToX(1.1);
+            scaleUp.setToY(1.1);
+            scaleUp.play();
+        });
+
+        button.setOnMouseExited(e -> {
+            ScaleTransition scaleDown = new ScaleTransition(Duration.millis(200), button);
+            scaleDown.setToX(1.0);
+            scaleDown.setToY(1.0);
+            scaleDown.play();
+        });
+    }
+
+    private void validateCredentials(String email, String password, Stage primaryStage) {
+        if (email.isEmpty() || password.isEmpty()) {
+            showErrorDialog("Email and password must not be empty.");
+            return;
+        }
+
+        Task<Boolean> task = new Task<Boolean>() {
+            @Override
+            protected Boolean call() throws Exception {
+                String url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=AIzaSyBQVX6KR_jjMLtJtm25fFQw297IlX2uymA";
+                String jsonInput = "{"
+                        + "\"email\":\"" + email + "\","
+                        + "\"password\":\"" + password + "\","
+                        + "\"returnSecureToken\":true"
+                        + "}";
+
+                HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                connection.setDoOutput(true);
+
+                try (OutputStream os = connection.getOutputStream()) {
+                    os.write(jsonInput.getBytes("UTF-8"));
+                }
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        };
+
+        task.setOnSucceeded(event -> {
+            if (task.getValue()) {
+                showMainPage(primaryStage);
+            } else {
+                showErrorDialog("Invalid email or password.");
+            }
+        });
+
+        task.setOnFailed(event -> showErrorDialog("Login failed. Please try again."));
+
+        new Thread(task).start();
+    }
+
+    private void showCreateAccountPage(Stage primaryStage) {
+        Stage createAccountStage = new Stage();
+        createAccountStage.setTitle("Create Account");
+
+        Label title = new Label("Create New Account");
+        title.setFont(new Font("Arial", 24));
+        title.setTextFill(Color.web("#3b5998"));
+
+        Label emailLabel = new Label("Email:");
+        TextField emailField = new TextField();
+        emailField.setPromptText("Enter your email");
+
+        Label passwordLabel = new Label("Password:");
+        PasswordField passwordField = new PasswordField();
+        passwordField.setPromptText("Enter your password");
+
+        Label confirmPasswordLabel = new Label("Confirm Password:");
+        PasswordField confirmPasswordField = new PasswordField();
+        confirmPasswordField.setPromptText("Confirm your password");
+
+        Button createButton = new Button("Create Account");
+        createButton.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white;");
+        
+        // Adding Hover Effect
+        addHoverAnimation(createButton);
+
+        createButton.setOnAction(e -> {
+            String email = emailField.getText().trim();
+            String password = passwordField.getText().trim();
+            String confirmPassword = confirmPasswordField.getText().trim();
+
+            if (!password.equals(confirmPassword)) {
+                showErrorDialog("Passwords do not match.");
+                return;
+            }
+
+            createAccount(email, password, createAccountStage);
+        });
+
+        GridPane createAccountGrid = new GridPane();
+        createAccountGrid.setAlignment(Pos.CENTER);
+        createAccountGrid.setPadding(new Insets(30));
+        createAccountGrid.setVgap(10);
+        createAccountGrid.setHgap(20);
+
+        createAccountGrid.add(title, 0, 0, 2, 1);
+        createAccountGrid.add(emailLabel, 0, 1);
+        createAccountGrid.add(emailField, 1, 1);
+        createAccountGrid.add(passwordLabel, 0, 2);
+        createAccountGrid.add(passwordField, 1, 2);
+        createAccountGrid.add(confirmPasswordLabel, 0, 3);
+        createAccountGrid.add(confirmPasswordField, 1, 3);
+        createAccountGrid.add(createButton, 1, 4);
+
+        Scene createAccountScene = new Scene(createAccountGrid, 400, 350);
+        createAccountStage.setScene(createAccountScene);
+        createAccountStage.show();
+    }
+
+    private void createAccount(String email, String password, Stage createAccountStage) {
+        showSuccessDialog("Account created successfully!");
+        createAccountStage.close();
+    }
+
+    private void showMainPage(Stage primaryStage) {
+        App mainPage = new App();
+        mainPage.start(primaryStage);
+    }
+
+    private void showErrorDialog(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Error");
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private void showSuccessDialog(String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Success");
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    public static void main(String[] args) {
+        launch(args);
+    }
+}
+
+
